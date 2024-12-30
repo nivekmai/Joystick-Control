@@ -9,6 +9,7 @@ An add-in for Fusion 360 that allows you to use joysticks (and other gamepad con
 3. Switch to Add-Ins tab
 4. Press the green + button
 5. Select the repo folder
+6. (optional) you probably want to set it to "Run on Startup" so you don't need to start the add-in the next time you restart Fusion 360
 
 # Usage
 
