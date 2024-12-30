@@ -1,0 +1,13 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"addin",
+	"id":	"b4270cff-b942-4ed0-bfa2-dd3acb9eb31b",
+	"author":	"Kevin Christensen",
+	"description":	{
+		"":	"Control Pan/Rotation/Zoom with joysticks (initially designed to work with XBox 360 controller)"
+	},
+	"version":	"0.0.0",
+	"runOnStartup":	true,
+	"supportedOS":	"windows",
+	"editEnabled":	true
+}
