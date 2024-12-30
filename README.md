@@ -25,6 +25,10 @@ Set up with controls that make sense to me (using an XBox360 controller):
    - B: front
    - A: back
    - X: home
+
+https://github.com/user-attachments/assets/aaf065e9-e6e6-4199-a3db-36f019b8c8fd
+
+https://www.youtube.com/watch?v=CueMOJzCEw0
   
 If you don't like this setup, you should be able to configure it by updating the variables at the beginning.
 
