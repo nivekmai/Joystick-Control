@@ -2,6 +2,14 @@
 
 An add-in for Fusion 360 that allows you to use joysticks (and other gamepad controls) to control the active viewport.
 
+# Install
+
+1. Download and unzip the repo.
+2. In Fusion, open the Scripts and Add-Ins panel (in the Utilities tab) (or, faster, hit Shift+S)
+3. Switch to Add-Ins tab
+4. Press the green + button
+5. Select the repo folder
+
 # Usage
 
 Set up with controls that make sense to me (using an XBox360 controller):
@@ -33,3 +41,11 @@ Given Fusion 360's weird setup for using libraries, I found it easier to use som
 The libraries were installed using pip in a local folder and then copied up to the `Modules` folder.
 
 The add-in is marked as supporting mac, but I haven't tried it there.
+
+# What's next (if I get the motivation)
+
+- Given that I haven't taken any time to build any configuration UI, I'm holding off on publishing this to the add-in store. I may find the motivation to do that later.
+- It'd be great if I could figure out the constrained vertical orbit.
+- I don't understand how view extents work, maybe I should figure that out to make sure I'm not doing weird zoom stuff.
+
+If you're interested in these things getting done, a pull request or sponsorship will always help :).
