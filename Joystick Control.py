@@ -11,6 +11,8 @@ from typing import Literal
 TAG = "JoystickControl/"
 # Special number to tell camera to go orientation home
 HOME_ORIENTATION = -1
+# Special number to tell the camera to constrain the upVector to a primary axis
+CONSTRAIN_ORIENTATION = -2
 
 # Configure as you wish
 ZOOM_SCALE = 0.1
@@ -35,6 +37,7 @@ BUTTON_TO_VIEW = {
     0: ViewOrientations.FrontViewOrientation,
     1: ViewOrientations.BackViewOrientation,
     2: HOME_ORIENTATION,
+    9: CONSTRAIN_ORIENTATION,
 }
 
 
@@ -63,7 +66,7 @@ class JoystickThread(Thread):
                 futil.log(f"{TAG}unknown axis: {key.number}: {key.get_proper_value()}")
         elif key.keytype is KeyTypes.HAT:
             hatCam(key.get_hat_name())
-        elif key.keytype is KeyTypes.BUTTON:
+        elif key.keytype is KeyTypes.BUTTON and key.value == 0:
             buttonCam(key.number)
 
     def add(self, joy: Joystick):
@@ -213,7 +216,12 @@ def orientCam(nextOrientation: ViewOrientations | Literal[-1]) -> Camera :
     if nextOrientation == HOME_ORIENTATION:
         app.activeViewport.goHome()
         return
-    cam.viewOrientation = nextOrientation
+    elif nextOrientation == CONSTRAIN_ORIENTATION:
+        upVector = getFrontVector().crossProduct(getLeftVector())
+        cam.upVector = getConstrainedVector(upVector)
+        cam.isSmoothTransition = True
+    else:
+        cam.viewOrientation = nextOrientation
     setCam(cam)
 
 
@@ -237,7 +245,6 @@ def moveCamForAxes(
 
     horizontalRotationMatrix = Matrix3D.create()
     verticalRotationMatrix = Matrix3D.create()
-    upVector = cam.upVector.copy()
     target = cam.target.copy()
     eye = cam.eye.copy()
 
@@ -250,6 +257,7 @@ def moveCamForAxes(
         axisToRadian(rotateYAxis), leftVector, target
     )
     upVector = newUpFromRotatingHorizontal(cam, horizontalRotationMatrix)
+    constrainedUpVector = getConstrainedVector(upVector)
 
     # failed attempts to get the correct upVector
     # upVector = newUpFromInvertedHorizontal(cam, horizontalRotationMatrix)
@@ -260,7 +268,7 @@ def moveCamForAxes(
     verticalPanVector = getVerticalPanVector(scalePanAxis(panYAxis), upVector)
     horizontalPanVector = getHorizontalPanVector(scalePanAxis(panXAxis), leftVector)
 
-    verticalRotationMatrix.setToRotation(axisToRadian(rotateXAxis), upVector, target)
+    verticalRotationMatrix.setToRotation(axisToRadian(rotateXAxis), constrainedUpVector, target)
 
     panVector = horizontalPanVector.copy()
     panVector.add(verticalPanVector)
@@ -280,8 +288,8 @@ def moveCamForAxes(
         )
 
     # Rotate only the eye
-    eye.transformBy(verticalRotationMatrix)
     eye.transformBy(horizontalRotationMatrix)
+    eye.transformBy(verticalRotationMatrix)
 
     # Apply changes
     cam.upVector = upVector
@@ -466,33 +474,26 @@ def constrain(vector: Vector3D) -> Vector3D:
     return vector
 
 
-# Given a camera, this determines in which of the primary axis
-# directions, the up vector is closest to and return that vector.
-def getConstrainedUpVector(camera: Camera) -> Vector3D:
-    # Determine which of the primary directions the current up vector is closest to.
-    upVector = Vector3D.create(1, 0, 0)
-    angle = upVector.angleTo(camera.upVector)
-    if Vector3D.create(-1, 0, 0).angleTo(camera.upVector) < angle:
-        upVector = Vector3D.create(-1, 0, 0)
-        angle = upVector.angleTo(camera.upVector)
-
-    if Vector3D.create(0, 1, 0).angleTo(camera.upVector) < angle:
-        upVector = Vector3D.create(0, 1, 0)
-        angle = upVector.angleTo(camera.upVector)
-
-    if Vector3D.create(0, -1, 0).angleTo(camera.upVector) < angle:
-        upVector = Vector3D.create(0, -1, 0)
-        angle = upVector.angleTo(camera.upVector)
-
-    if Vector3D.create(0, 0, 1).angleTo(camera.upVector) < angle:
-        upVector = Vector3D.create(0, 0, 1)
-        angle = upVector.angleTo(camera.upVector)
-
-    if Vector3D.create(0, 0, -1).angleTo(camera.upVector) < angle:
-        upVector = Vector3D.create(0, 0, -1)
-        angle = upVector.angleTo(camera.upVector)
-
-    return upVector
+def getConstrainedVector(vector) -> Vector3D:
+    """
+    Get a pure primary direction that the vector is closest to
+    """
+    absX = abs(vector.x)
+    absY = abs(vector.y)
+    absZ = abs(vector.z)
+    biggest = max(absX, absY, absZ)
+    if (biggest == absX):
+        if vector.x > 0:
+            return Vector3D.create(1, 0, 0)
+        return Vector3D.create(-1, 0, 0)
+    elif (biggest == absY):
+        if vector.y > 0:
+            return Vector3D.create(0, 1, 0)
+        return Vector3D.create(0, -1, 0)
+    else:
+        if vector.z > 0:
+            return Vector3D.create(0, 0, 1)
+        return Vector3D.create(0, 0, -1)
 
 
 def setCam(cam: Camera):
