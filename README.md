@@ -26,6 +26,7 @@ Set up with controls that make sense to me (using an XBox360 controller):
    - B: front
    - A: back
    - X: home
+ - Since I'm frustrated by "ever so slightly tilted" rotations that I can't figure out, I added a "constrain to primary axis" to the right joystick press (I think that's called "R3" in gamepad buttons?)
 
 https://github.com/user-attachments/assets/aaf065e9-e6e6-4199-a3db-36f019b8c8fd
 
