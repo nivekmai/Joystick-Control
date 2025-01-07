@@ -1,14 +1,74 @@
+import os
+import sys
+import platform
+import subprocess
+
+from . import config
 from .lib import fusionAddInUtils as futil
-from .Modules.pyjoystick.sdl2 import run_event_loop
+from adsk.core import LogLevels
+
+def installPygameWindows():
+    virtualenvDirName = f"{config.ADDIN_NAME}Venv"
+    # Clean up path in case we crashed somewhere, sys should not contain our virtualenv yet
+    sys.path = [dir for dir in sys.path if dir.find(virtualenvDirName) == -1]
+
+    original_sys_path = sys.path.copy()
+
+    virtualenv = os.path.join(sys.path[0], virtualenvDirName)
+    python = os.path.join(sys.path[0], "Python", "python.exe")
+    virtualenvSitePackages = os.path.join(virtualenv, "Lib", "site-packages")
+
+    if not os.path.isdir(virtualenv):
+        futil.log(f"{config.ADDIN_NAME}: missing virtualenv, creating...", LogLevels.WarningLogLevel)
+        subprocess.check_call([python, '-m', 'venv', virtualenv]) 
+
+    futil.log(f"{config.ADDIN_NAME}: virtualenv exists, attempting to import from virtualenv", LogLevels.InfoLogLevel)
+    # in case of script failure, the virtualenv might already be in the path from a previous run
+    if not virtualenv in sys.path:
+        sys.path.insert(0, virtualenvSitePackages)
+    try:
+        import pygame
+        return(True, original_sys_path.copy())
+    except:
+        try:
+            futil.log(f"{config.ADDIN_NAME}: missing pygame, installing...", LogLevels.WarningLogLevel)
+            subprocess.check_call([os.path.join(virtualenv, "Scripts", "pip.exe"), "install", "--upgrade", "pygame"])
+            futil.log(f"{config.ADDIN_NAME}: pygame installed", LogLevels.InfoLogLevel)
+            return (True, original_sys_path.copy())
+        except:
+            futil.handle_error("Failed to install and import pygame. See text console for more details", True)
+            return (False, original_sys_path.copy())
+
+installedPygame = False
+
+if platform.system() is 'Windows':
+    (installedPygame, original_sys_path) = installPygameWindows()
+    if installedPygame:
+        try:
+            import pygame
+            futil.log(f"{config.ADDIN_NAME}: pygame installed", LogLevels.InfoLogLevel)
+        except:
+            futil.handle_error(f"{config.ADDIN_NAME}: Failed to import pygame, falling back to use pyjoystick (less gamepad support). See text console for more details", True)
+            installedPygame = False
+    sys.path = original_sys_path
+else:
+    #TODO: figure out where the python executable is on mac
+    futil.handle_error("Sorry, this OS is unsupported, falling back to use pyjoystick (less gamepad support)", True)
+
+
+# pyjoystic must be imported after pygame as it causes dynamic linking issues with SDL2
+if not installedPygame:
+    from .Modules.pyjoystick.sdl2 import run_event_loop
+
 from .Modules.pyjoystick.interface import KeyTypes, Key, Joystick
+
+from adsk.core import Vector3D, Matrix3D, Application, Point3D, Camera, ViewOrientations
 from time import sleep
 from math import pow, pi, radians
 from adsk import doEvents
-from adsk.core import Vector3D, Matrix3D, Application, Point3D, Camera, ViewOrientations
 from threading import Event, Thread
 from typing import Literal
 
-TAG = "JoystickControl/"
 # Special number to tell camera to go orientation home
 HOME_ORIENTATION = -1
 # Special number to tell the camera to constrain the upVector to a primary axis
@@ -21,12 +81,21 @@ ROTATION_AXIS_SCALE = 0.01
 PAN_ZOOM_COMPENSATION = 0.0005
 ZOOM_EXTENT_MULTIPLIER = 0.1
 AXIS_DEADZONE = 0.15
-PAN_X_AXIS = 0
-PAN_Y_AXIS = 1
-ZOOM_POS_AXIS = 2
-ROTATE_X_AXIS = 3
-ROTATE_Y_AXIS = 4
-ZOOM_NEG_AXIS = 5
+if not installedPygame:
+    PAN_X_AXIS = 0
+    PAN_Y_AXIS = 1
+    ZOOM_POS_AXIS = 2
+    ROTATE_X_AXIS = 3
+    ROTATE_Y_AXIS = 4
+    ZOOM_NEG_AXIS = 5
+else:
+    PAN_X_AXIS = 0
+    PAN_Y_AXIS = 1
+    ROTATE_X_AXIS = 2
+    ROTATE_Y_AXIS = 3
+    ZOOM_POS_AXIS = 4
+    ZOOM_NEG_AXIS = 5
+
 HAT_TO_VIEW = {
     Key.HAT_NAME_UP: ViewOrientations.TopViewOrientation,
     Key.HAT_NAME_DOWN: ViewOrientations.BottomViewOrientation,
@@ -41,7 +110,7 @@ BUTTON_TO_VIEW = {
 }
 
 
-class JoystickThread(Thread):
+class PyJoystickThread(Thread):
     """
     pyjoystick's ThreadEventManager doesn't seem to work, so we're just running
     it in our own thread here.
@@ -63,7 +132,7 @@ class JoystickThread(Thread):
             if key.number < 6:
                 axes[key.number] = key.get_proper_value()
             else:
-                futil.log(f"{TAG}unknown axis: {key.number}: {key.get_proper_value()}")
+                futil.log(f"{config.ADDIN_NAME}: unknown axis: {key.number}: {key.get_proper_value()}")
         elif key.keytype is KeyTypes.HAT:
             hatCam(key.get_hat_name())
         elif key.keytype is KeyTypes.BUTTON and key.value == 0:
@@ -92,6 +161,37 @@ class JoystickThread(Thread):
         except:
             pass
 
+class PyGameThread(Thread):
+    def __init__(self, event: Event):
+        Thread.__init__(self)
+        self.stopped = event
+
+    def run(self):
+        try:
+            self.pygameJoysticks = {}
+            while alive():
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.stopped = True  
+
+                    # Handle hotplugging, also initializes the joysticks when plugged in (otherwise we don't get the other events)
+                    if event.type == pygame.JOYDEVICEADDED:
+                        joy = pygame.joystick.Joystick(event.device_index)
+                        self.pygameJoysticks[joy.get_instance_id()] = joy
+
+                    if event.type == pygame.JOYDEVICEREMOVED:
+                        del self.pygameJoysticks[event.instance_id]
+
+                    if event.type == pygame.JOYBUTTONDOWN:
+                        buttonCam(event.button)
+
+                    if event.type == pygame.JOYHATMOTION:
+                        hatCam(pygameToHatName(event.value))
+
+                    if event.type == pygame.JOYAXISMOTION:
+                        axes[event.axis] = event.value
+        except:
+            pass
 
 class RenderThread(Thread):
     """
@@ -125,8 +225,14 @@ def run(context):
         app = Application.get()
         axes = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         stopFlag = Event()
-        joystickThread = JoystickThread(stopFlag)
-        joystickThread.start()
+
+        if installedPygame:
+            pygame.init()
+            pygameJoystickThread = PyGameThread(stopFlag)
+            pygameJoystickThread.start()
+        else:
+            joystickThread = PyJoystickThread(stopFlag)
+            joystickThread.start()
         renderThread = RenderThread(stopFlag)
         renderThread.start()
 
@@ -185,7 +291,9 @@ def getZoomAxis(axes: list[float]) -> float:
     """
     Get the axis for zoom. Configure this by updating ZOOM_POS_AXIS and ZOOM_NEG_AXIS
     """
-    return deadZone(axes[ZOOM_POS_AXIS] - axes[ZOOM_NEG_AXIS])
+    if not installedPygame:
+        return deadZone(axes[ZOOM_POS_AXIS] - axes[ZOOM_NEG_AXIS])
+    return deadZone(((axes[ZOOM_POS_AXIS] + 1)/2) - ((axes[ZOOM_NEG_AXIS] + 1)/2))
 
 
 def hatCam(hatName: str):
@@ -506,3 +614,13 @@ def setCam(cam: Camera):
     app.activeViewport.camera = cam
     doEvents()
     app.activeViewport.refresh()
+
+def pygameToHatName(value):
+    """
+    Convert pygame hat tuple to hat name
+    """
+    match value:
+        case (-1, 0): return Key.HAT_NAME_LEFT
+        case (0, 1): return Key.HAT_NAME_UP
+        case (1, 0): return Key.HAT_NAME_RIGHT
+        case (0, -1): return Key.HAT_NAME_DOWN
