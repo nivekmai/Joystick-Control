@@ -81,20 +81,12 @@ ROTATION_AXIS_SCALE = 0.01
 PAN_ZOOM_COMPENSATION = 0.0005
 ZOOM_EXTENT_MULTIPLIER = 0.1
 AXIS_DEADZONE = 0.15
-if not installedPygame:
-    PAN_X_AXIS = 0
-    PAN_Y_AXIS = 1
-    ZOOM_POS_AXIS = 2
-    ROTATE_X_AXIS = 3
-    ROTATE_Y_AXIS = 4
-    ZOOM_NEG_AXIS = 5
-else:
-    PAN_X_AXIS = 0
-    PAN_Y_AXIS = 1
-    ROTATE_X_AXIS = 2
-    ROTATE_Y_AXIS = 3
-    ZOOM_POS_AXIS = 4
-    ZOOM_NEG_AXIS = 5
+
+PAN_X_AXIS = 0
+PAN_Y_AXIS = 1
+ROTATE_X_AXIS = 3
+ROTATE_Y_AXIS = 4
+ROTATE_Z_AXIS = 2
 
 HAT_TO_VIEW = {
     Key.HAT_NAME_UP: ViewOrientations.TopViewOrientation,
@@ -103,10 +95,9 @@ HAT_TO_VIEW = {
     Key.HAT_NAME_RIGHT: ViewOrientations.RightViewOrientation,
 }
 BUTTON_TO_VIEW = {
-    0: ViewOrientations.FrontViewOrientation,
-    1: ViewOrientations.BackViewOrientation,
-    2: HOME_ORIENTATION,
-    9: CONSTRAIN_ORIENTATION,
+    0: HOME_ORIENTATION,
+    1: ViewOrientations.TopViewOrientation,
+    2: CONSTRAIN_ORIENTATION,
 }
 
 
@@ -206,11 +197,11 @@ class RenderThread(Thread):
         while alive():
             try:
                 moveCamForAxes(
-                    getPanXAxis(axes),
-                    getPanYAxis(axes),
-                    getRotateXAxis(axes),
-                    getRotateYAxis(axes),
-                    getZoomAxis(axes),
+                    panXAxis=getPanXAxis(axes),
+                    panYAxis=getPanYAxis(axes),
+                    rotateXAxis=getRotateXAxis(axes),
+                    rotateYAxis=getRotateYAxis(axes),
+                    rotateZAxis=getRotateZAxis(axes),
                 )
                 sleep(0.01)
             except:
@@ -270,7 +261,7 @@ def getPanYAxis(axes: list[float]) -> float:
     """
     Get the axis for Y panning. Configure this by updating PAN_Y_AXIS
     """
-    return deadZone(axes[PAN_Y_AXIS]) * -1
+    return deadZone(axes[PAN_Y_AXIS])
 
 
 def getRotateXAxis(axes: list[float]) -> float:
@@ -284,16 +275,13 @@ def getRotateYAxis(axes: list[float]) -> float:
     """
     Get the axis for Y rotation. Configure this by updating ROTATE_Y_AXIS
     """
-    return deadZone(axes[ROTATE_Y_AXIS]) * -1
+    return deadZone(axes[ROTATE_Y_AXIS])
 
-
-def getZoomAxis(axes: list[float]) -> float:
+def getRotateZAxis(axes: list[float]) -> float:
     """
-    Get the axis for zoom. Configure this by updating ZOOM_POS_AXIS and ZOOM_NEG_AXIS
+    Get the axis for Z rotation. Configure this by updating ROTATE_Z_AXIS
     """
-    if not installedPygame:
-        return deadZone(axes[ZOOM_POS_AXIS] - axes[ZOOM_NEG_AXIS])
-    return deadZone(((axes[ZOOM_POS_AXIS] + 1)/2) - ((axes[ZOOM_NEG_AXIS] + 1)/2))
+    return deadZone(axes[ROTATE_Z_AXIS])
 
 
 def hatCam(hatName: str):
@@ -339,6 +327,7 @@ def moveCamForAxes(
     rotateXAxis: float = 0,
     rotateYAxis: float = 0,
     zoomAxis: float = 0,
+    rotateZAxis: float = 0,
 ) -> None:
     if (
         panXAxis == 0
@@ -346,6 +335,7 @@ def moveCamForAxes(
         and rotateXAxis == 0
         and rotateYAxis == 0
         and zoomAxis == 0
+        and rotateZAxis == 0
     ):
         return
 
@@ -353,6 +343,7 @@ def moveCamForAxes(
 
     horizontalRotationMatrix = Matrix3D.create()
     verticalRotationMatrix = Matrix3D.create()
+    tiltRotationMatrix = Matrix3D.create()
     target = cam.target.copy()
     eye = cam.eye.copy()
 
@@ -364,7 +355,12 @@ def moveCamForAxes(
     horizontalRotationMatrix.setToRotation(
         axisToRadian(rotateYAxis), leftVector, target
     )
-    upVector = newUpFromRotatingHorizontal(cam, horizontalRotationMatrix)
+    upVector = newUpFromRotationMatrix(cam.upVector, horizontalRotationMatrix)
+
+    tiltRotationMatrix.setToRotation(
+        axisToRadian(rotateZAxis), frontVector, target
+    )
+    upVector = newUpFromRotationMatrix(upVector, tiltRotationMatrix)
     constrainedUpVector = getConstrainedVector(upVector)
 
     # failed attempts to get the correct upVector
@@ -423,14 +419,14 @@ def newUpFromInvertedHorizontal(
     return newUp
 
 
-def newUpFromRotatingHorizontal(
-    cam: Camera, horizontalRotationMatrix: Matrix3D
+def newUpFromRotationMatrix(
+    vector: Vector3D, rotationMatrix: Matrix3D
 ) -> Vector3D:
     """
-    Apply the horizontal rotation matrix to the previous upVector
+    Apply the rotation matrix to the previous upVector
     """
-    newUp = cam.upVector.copy()
-    newUp.transformBy(horizontalRotationMatrix)
+    newUp = vector.copy()
+    newUp.transformBy(rotationMatrix)
     return newUp
 
 
